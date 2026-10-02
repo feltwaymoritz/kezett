@@ -4,7 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 export const metadata: Metadata = {
-  title: "Kezett — JFT Study",
+  title: "Kezett",
   description:
     "Private JFT-Basic learning OS with simulation, drilling, book chapters, vocabulary, kanji, listening and progress analytics.",
   manifest: "/manifest.webmanifest",

@@ -9,6 +9,7 @@ import {
   BookOpenCheck,
   ChartNoAxesColumnIncreasing,
   Flame,
+  GraduationCap,
   Headphones,
   Home,
   Languages,
@@ -28,6 +29,7 @@ const labels = {
   id: {
     dashboard: "Dashboard",
     tryout: "Try Out JFT",
+    jlpt: "Try Out JLPT",
     practice: "Drilling Soal",
     library: "Belajar dari Buku",
     vocab: "Vocabulary Master",
@@ -39,6 +41,7 @@ const labels = {
   ja: {
     dashboard: "ダッシュボード",
     tryout: "JFT 模擬試験",
+    jlpt: "JLPT 模試",
     practice: "問題ドリル",
     library: "教材ライブラリー",
     vocab: "語彙マスター",
@@ -52,6 +55,7 @@ const labels = {
 const items = [
   ["", Home, "dashboard"],
   ["tryout", Sparkles, "tryout"],
+  ["jlpt", GraduationCap, "jlpt"],
   ["drilling", BookOpenCheck, "practice"],
   ["library", BookOpen, "library"],
   ["vocabulary", WholeWord, "vocab"],
@@ -130,7 +134,7 @@ export function Shell({
           </div>
 
           <div className="text-xs text-slate-500">
-            JFT Study OS
+            Belajar Bahasa Jepang
           </div>
         </div>
       </div>
