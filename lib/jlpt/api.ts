@@ -19,6 +19,8 @@ export interface VocabItem {
   note: string | null;
   options: string[];
   text: string;
+  /** Substring of `text` that was underlined in the printed booklet (M1/M2/M4). */
+  underline?: string;
 }
 
 export interface GrItem {
@@ -67,6 +69,8 @@ export interface JlptItem {
   label: string;
   mondai: string;
   text: string;
+  /** Substring of `text` underlined in the printed booklet (vocab M1/M2/M4). */
+  underline?: string;
   inst: string;
   options: string[];
   passage: string | null;
@@ -140,6 +144,7 @@ export function buildSections(
       label: `No.${x.no}`,
       mondai: `問題${x.mondai}`,
       text: x.text,
+      underline: x.underline,
       inst: x.instruction || "",
       options: x.options,
       passage: null,

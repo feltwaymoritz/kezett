@@ -58,6 +58,28 @@ function fmtElapsed(totalSeconds: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+/** Render question text with the booklet's underlined target word (vocab M1/M2/M4). */
+function UnderlinedText({
+  text,
+  underline,
+}: {
+  text: string;
+  underline?: string;
+}) {
+  if (!underline) return <>{text}</>;
+  const i = text.indexOf(underline);
+  if (i < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, i)}
+      <u className="underline decoration-emerald-600 decoration-2 underline-offset-4">
+        {underline}
+      </u>
+      {text.slice(i + underline.length)}
+    </>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components (same file, per spec)
 // ---------------------------------------------------------------------------
@@ -126,7 +148,9 @@ function ItemCard({
           />
         ) : null}
         {q.text ? (
-          <p className="jp whitespace-pre-wrap leading-loose">{q.text}</p>
+          <p className="jp whitespace-pre-wrap leading-loose">
+            <UnderlinedText text={q.text} underline={q.underline} />
+          </p>
         ) : null}
         <div className="mt-4 grid gap-2">
           {q.options.map((opt, oi) => {
@@ -190,7 +214,9 @@ function ReviewItem({
         />
       ) : null}
       {q.text ? (
-        <p className="jp whitespace-pre-wrap leading-loose">{q.text}</p>
+        <p className="jp whitespace-pre-wrap leading-loose">
+          <UnderlinedText text={q.text} underline={q.underline} />
+        </p>
       ) : null}
       <div className="grid gap-2">
         {q.options.map((opt, oi) => {
