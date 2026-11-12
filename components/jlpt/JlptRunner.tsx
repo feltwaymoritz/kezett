@@ -329,6 +329,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
   const [chunkIdx, setChunkIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [elapsedDisplay, setElapsedDisplay] = useState(0);
+  const [rate, setRate] = useState(1);
 
   // Result / review / retry
   const [result, setResult] = useState<ResultData | null>(null);
@@ -346,6 +347,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
   const sectionIdxRef = useRef(0);
   const chunkIdxRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const rateRef = useRef(1);
   const preloadRef = useRef<HTMLAudioElement | null>(null);
   const lastElapsedRef = useRef(0);
   const savedRef = useRef(false);
@@ -356,6 +358,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     answersRef.current = answers;
     sectionIdxRef.current = sectionIdx;
     chunkIdxRef.current = chunkIdx;
+    rateRef.current = rate;
   });
 
   // ---------------- Data loading ----------------
@@ -424,6 +427,13 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     setPlaying(false);
   }, []);
 
+  const applyRate = useCallback((r: number) => {
+    rateRef.current = r;
+    setRate(r);
+    const a = audioRef.current;
+    if (a) a.playbackRate = r;
+  }, []);
+
   const preloadChunk = useCallback(
     (n: number) => {
       if (!examIdx || n < 0 || n >= examIdx.audioChunks) return;
@@ -434,6 +444,43 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
       if (preloadRef.current.src !== url) preloadRef.current.src = url;
     },
     [examIdx],
+  );
+
+  // Jump to an absolute second in the full audio (chunks are 25s slices).
+  const seekTo = useCallback(
+    (target: number) => {
+      if (!examIdx) return;
+      const total = examIdx.audioSeconds || 0;
+      const t = Math.max(0, Math.min(total, target));
+      const n = Math.min(examIdx.audioChunks - 1, Math.floor(t / 25));
+      const off = t - n * 25;
+      const a = audioRef.current;
+      const wasPlaying = !!a && !a.paused;
+      chunkIdxRef.current = n;
+      setChunkIdx(n);
+      lastElapsedRef.current = t;
+      setElapsedDisplay(t);
+      if (a) {
+        const url = audioChunkUrl(examIdx.id, n);
+        const apply = () => {
+          a.currentTime = Math.min(
+            off,
+            Math.max(0, (a.duration || 25) - 0.05),
+          );
+          a.playbackRate = rateRef.current;
+          if (wasPlaying) void a.play().catch(() => {});
+        };
+        if (a.src === url || a.src.endsWith(url)) {
+          apply();
+        } else {
+          a.src = url;
+          a.addEventListener("loadedmetadata", apply, { once: true });
+          a.load();
+        }
+      }
+      preloadChunk(n + 1);
+    },
+    [examIdx, preloadChunk],
   );
 
   // Entering the listening section: reset to chunk 0, paused.
@@ -470,6 +517,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     if (!a || !examIdx) return;
     if (a.paused) {
       if (!a.src) a.src = audioChunkUrl(examIdx.id, chunkIdxRef.current);
+      a.playbackRate = rateRef.current;
       void a.play().catch(() => {
         /* autoplay / network hiccup — user can press play again */
       });
@@ -493,6 +541,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
       const a = audioRef.current;
       if (a) {
         a.src = audioChunkUrl(examIdx.id, next);
+        a.playbackRate = rateRef.current;
         void a.play().catch(() => {});
       }
       preloadChunk(next + 1);
@@ -847,15 +896,64 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
                       </button>
                     </div>
                   </div>
-                  <div className="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-800">
+                  <div
+                    className="mt-3 h-3 cursor-pointer rounded-full bg-slate-200 dark:bg-slate-800"
+                    role="slider"
+                    aria-label="Geser audio"
+                    aria-valuemin={0}
+                    aria-valuemax={examIdx.audioSeconds}
+                    aria-valuenow={Math.round(elapsedDisplay)}
+                    title="Klik untuk loncat ke bagian itu"
+                    onClick={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      const frac = Math.min(
+                        1,
+                        Math.max(0, (e.clientX - r.left) / r.width),
+                      );
+                      seekTo(frac * (examIdx.audioSeconds || 0));
+                    }}
+                  >
                     <div
-                      className="h-full rounded-full bg-emerald-600 transition-all"
+                      className="h-full rounded-full bg-emerald-600"
                       style={{ width: `${audioPct}%` }}
                     />
                   </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      onClick={() => seekTo(elapsedDisplay - 10)}
+                    >
+                      ⏪ 10 dtk
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      onClick={() => seekTo(elapsedDisplay + 10)}
+                    >
+                      10 dtk ⏩
+                    </button>
+                    <span className="ml-1 text-xs font-bold text-slate-500">
+                      Kecepatan:
+                    </span>
+                    {[0.75, 1, 1.25, 1.5, 2].map((r) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => applyRate(r)}
+                        className={`rounded-lg px-2 py-1 text-xs font-black ${
+                          rate === r
+                            ? "bg-emerald-600 text-white"
+                            : "bg-slate-100 text-slate-500 dark:bg-slate-800"
+                        }`}
+                      >
+                        {r}×
+                      </button>
+                    ))}
+                  </div>
                   <div className="mt-1.5 text-[11px] text-slate-400">
-                    Bagian {chunkIdx + 1} dari {examIdx.audioChunks} • tanpa
-                    tombol seek — seperti ujian asli
+                    Bagian {chunkIdx + 1} dari {examIdx.audioChunks} • klik
+                    bar di atas untuk loncat ke bagian mana pun
                   </div>
                 </div>
               )}

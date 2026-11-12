@@ -191,7 +191,17 @@ export function buildSections(
   return [
     { key: "vocab", title: "言語知識（文字・語彙）", name: "文字・語彙", min: timers[0], qs: vocab },
     { key: "bunpo", title: "言語知識（文法）・読解", name: "文法・読解", min: timers[1], qs: bunpo },
-    { key: "listening", title: "聴解", name: "聴解", min: timers[2], qs: listening },
+    // Listening runs as long as its audio: real recordings vary (30–48 min),
+    // so the nominal 40-min timer would cut the audio off on long exams.
+    {
+      key: "listening",
+      title: "聴解",
+      name: "聴解",
+      min: data.meta?.audioSeconds
+        ? Math.ceil(data.meta.audioSeconds / 60)
+        : timers[2],
+      qs: listening,
+    },
   ];
 }
 
