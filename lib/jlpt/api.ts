@@ -130,8 +130,11 @@ function ansEntry(
 }
 
 /**
- * Build the three tryout sections (vocab 30m / grammar+reading 70m / listening 40m)
+ * Build the tryout sections (vocab 30m / grammar+reading 70m / listening 40m)
  * from raw exam data — ported from the standalone app's buildSections().
+ * Sections with no questions are dropped, so an exam without listening
+ * (e.g. pred-2026-12) runs as a 2-section tryout; original exams are
+ * unaffected because their listening list is never empty.
  */
 export function buildSections(
   data: JlptExamData,
@@ -193,7 +196,7 @@ export function buildSections(
     }
   }
 
-  return [
+  const sections: JlptSection[] = [
     { key: "vocab", title: "言語知識（文字・語彙）", name: "文字・語彙", min: timers[0], qs: vocab },
     { key: "bunpo", title: "言語知識（文法）・読解", name: "文法・読解", min: timers[1], qs: bunpo },
     // Listening runs as long as its audio: real recordings vary (30–48 min),
@@ -208,6 +211,7 @@ export function buildSections(
       qs: listening,
     },
   ];
+  return sections.filter((s) => s.qs.length > 0);
 }
 
 // ---------------- Drill bank ----------------

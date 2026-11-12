@@ -31,10 +31,10 @@ export function JlptLibrary({ locale }: { locale: Locale }) {
       <div>
         <h1 className="text-3xl font-black">Perpustakaan Tryout JLPT</h1>
         <p className="mt-2 max-w-3xl text-slate-500">
-          31 tryout: 30 soal asli JLPT N3 (2010.07–2025.12) + 1 tryout generate. Tiga sesi
+          32 tryout: 30 soal asli JLPT N3 (2010.07–2025.12) + 2 tryout generate. Tiga sesi
           berurutan persis ujian asli: <span className="jp">文字・語彙</span> 30 menit,{" "}
           <span className="jp">文法・読解</span> 70 menit, <span className="jp">聴解</span> 40
-          menit.
+          menit. (Tryout “Prediksi Desember 2026” tanpa sesi listening: 2 sesi, 30+70 menit.)
         </p>
       </div>
 
@@ -82,10 +82,10 @@ export function JlptLibrary({ locale }: { locale: Locale }) {
                 <h2 className="jp mt-4 text-xl font-black">{e.label}</h2>
                 <div className="mt-3 space-y-1 text-sm text-slate-500">
                   <p className="jp">
-                    {e.counts.vocab} 語彙 • {e.counts.grammarReading} 文法・読解 •{" "}
-                    {e.counts.listening} 聴解
+                    {e.counts.vocab} 語彙 • {e.counts.grammarReading} 文法・読解
+                    {e.counts.listening > 0 ? ` • ${e.counts.listening} 聴解` : ""}
                   </p>
-                  <p>⏱ 30+70+40 menit</p>
+                  <p>⏱ {e.timers.filter((t) => t > 0).join("+")} menit</p>
                 </div>
                 {att.length > 0 && (
                   <p className="mt-3 text-sm font-semibold text-amber-600">

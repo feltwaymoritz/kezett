@@ -1,4 +1,4 @@
-// Static index of the 31 JLPT N3 tryout exams (30 original + gen-01).
+// Static index of the 32 JLPT N3 tryout exams (30 original + gen-01 + pred-2026-12).
 // Counts were computed from the exam JSON parts in public/jlpt/data at prep time.
 // Per-exam content (questions/answers) is fetched at runtime by lib/jlpt/api.ts.
 
@@ -17,6 +17,7 @@ export interface JlptExamIndex {
 export const JLPT_TIMERS: [number, number, number] = [30, 70, 40];
 
 export const JLPT_EXAMS: JlptExamIndex[] = [
+  { id: "pred-2026-12", label: "Prediksi Desember 2026", type: "generated", counts: { vocab: 35, grammarReading: 39, listening: 0, total: 74 }, timers: [30, 70, 0], audioSeconds: 0, audioChunks: 0, scriptPages: 0 },
   { id: "2024-12", label: "2024年12月", type: "original", counts: { vocab: 35, grammarReading: 38, listening: 28, total: 101 }, timers: JLPT_TIMERS, audioSeconds: 2197, audioChunks: 88, scriptPages: 11 },
   { id: "2025-12", label: "2025年12月", type: "original", counts: { vocab: 35, grammarReading: 38, listening: 28, total: 101 }, timers: JLPT_TIMERS, audioSeconds: 2233, audioChunks: 90, scriptPages: 10 },
   { id: "2025-07", label: "2025年7月", type: "original", counts: { vocab: 35, grammarReading: 38, listening: 28, total: 101 }, timers: JLPT_TIMERS, audioSeconds: 2685, audioChunks: 108, scriptPages: 11 },

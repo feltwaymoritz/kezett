@@ -18,6 +18,8 @@ import {
 } from "@/lib/jlpt/api";
 import {
   isPassEstimate,
+  maxScaledTotal,
+  passThresholdTotal,
   totalScaled,
   withScaled,
   type SectionResult,
@@ -1061,7 +1063,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
                 </div>
                 <h1 className="jp mt-2 text-xl font-black">{section.title}</h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Sesi {sectionIdx + 1}/3 • {section.qs.length} soal
+                  Sesi {sectionIdx + 1}/{sections.length} • {section.qs.length} soal
                 </p>
               </div>
               <div className="text-right">
@@ -1259,7 +1261,8 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
               <div className="font-bold">
                 Total {result.totalC}/{result.totalQ} ({result.pct}%) •
-                Estimasi total {result.totScaled}/180
+                Estimasi total {result.totScaled}/
+                {maxScaledTotal(result.secResults)}
               </div>
               <span
                 className={`badge ${
@@ -1274,8 +1277,13 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
               </span>
             </div>
             <p className="mt-3 text-xs text-slate-400">
-              Skor skala adalah estimasi kasar: lulus N3 ≥95 total &amp; tiap
-              bagian ≥19.
+              Skor skala adalah estimasi kasar: lulus N3 ≥
+              {passThresholdTotal(result.secResults)} total &amp; tiap bagian
+              ≥19
+              {result.secResults.length < 3
+                ? " (tryout ini tanpa sesi listening, ambang total disesuaikan secara proporsional)"
+                : ""}
+              .
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link href={`/${locale}/jlpt/tryout`} className="btn-ghost">
