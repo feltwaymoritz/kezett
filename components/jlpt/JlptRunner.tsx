@@ -72,6 +72,7 @@ interface TryoutDraft {
   chunkIdx: number;
   elapsed: number;
   savedAt: number;
+  qTimes?: Record<string, number>;
 }
 
 function draftKey(examId: string) {
@@ -224,10 +225,12 @@ function ReviewItem({
   q,
   userAns,
   showPassage,
+  timeSec,
 }: {
   q: JlptItem;
   userAns?: number;
   showPassage: boolean;
+  timeSec?: number;
 }) {
   const isCorrect = userAns !== undefined && userAns === q.key;
   return (
@@ -238,6 +241,11 @@ function ReviewItem({
         <span className="text-sm text-slate-500">
           kamu: {userAns ?? "—"} • kunci: {q.key ?? "—"}
         </span>
+        {timeSec !== undefined ? (
+          <span className="text-sm tabular-nums text-slate-500">
+            ⏱ {fmtElapsed(timeSec)}
+          </span>
+        ) : null}
       </div>
       {showPassage && q.passage ? <PassageBlock text={q.passage} /> : null}
       {q.image ? (
@@ -382,6 +390,10 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
   const [sectionIdx, setSectionIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [flags, setFlags] = useState<Set<string>>(new Set());
+  // Per-question time (seconds): interval from the previous answer click
+  // (or section start) until this question was answered. Accumulates when
+  // an answer is changed.
+  const [qTimes, setQTimes] = useState<Record<string, number>>({});
   // null = timer not armed yet (prevents a false auto-finish on the load commit)
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [currentId, setCurrentId] = useState("");
@@ -416,6 +428,9 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
   const audioRestoreRef = useRef<{ chunkIdx: number; elapsed: number } | null>(
     null,
   );
+  // Timestamp (ms) of the last answer click, or of the current section's
+  // start — the clock for the per-question timer.
+  const lastAnswerAtRef = useRef(0);
   const preloadRef = useRef<HTMLAudioElement | null>(null);
   const lastElapsedRef = useRef(0);
   const savedRef = useRef(false);
@@ -445,6 +460,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
           restoreRef.current = draft;
           setAnswers(draft.answers || {});
           setFlags(new Set(draft.flags || []));
+          setQTimes(draft.qTimes || {});
           if (draft.sectionIdx > 0) setSectionIdx(draft.sectionIdx);
           const li = secs.findIndex((s) => s.key === "listening");
           if (draft.sectionIdx === li && draft.elapsed > 0) {
@@ -471,7 +487,16 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
 
   // ---------------- Answer / flag handlers ----------------
   const setAnswer = useCallback((qid: string, value: number) => {
-    setAnswers((prev) => ({ ...prev, [qid]: value }));
+    // Per-question timer: time since the previous answer click (or the
+    // section start) belongs to this question.
+    const now = Date.now();
+    const prev = lastAnswerAtRef.current;
+    if (prev > 0) {
+      const elapsedSec = Math.max(0, Math.round((now - prev) / 1000));
+      setQTimes((p) => ({ ...p, [qid]: (p[qid] ?? 0) + elapsedSec }));
+    }
+    lastAnswerAtRef.current = now;
+    setAnswers((prevAns) => ({ ...prevAns, [qid]: value }));
     setCurrentId(qid);
   }, []);
 
@@ -729,6 +754,8 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     pauseAudio();
     setAnswers({});
     setFlags(new Set());
+    setQTimes({});
+    lastAnswerAtRef.current = 0;
     setSectionIdx(0);
     setCurrentId(sectionsRef.current[0]?.qs[0]?.id ?? "");
     chunkIdxRef.current = 0;
@@ -767,9 +794,11 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
       setSecondsLeft(remaining);
       sectionStartedAtRef.current = draft.sectionStartedAt;
       restoreRef.current = null;
+      lastAnswerAtRef.current = Date.now();
       return;
     }
     sectionStartedAtRef.current = Date.now();
+    lastAnswerAtRef.current = Date.now();
     setSecondsLeft(sec.min * 60);
   }, [sectionIdx, sections]);
 
@@ -821,6 +850,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
       chunkIdx,
       elapsed: elapsedDisplay,
       savedAt: Date.now(),
+      qTimes,
     };
     try {
       window.localStorage.setItem(key, JSON.stringify(draft));
@@ -835,6 +865,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     sectionIdx,
     chunkIdx,
     elapsedDisplay,
+    qTimes,
     examIdx,
   ]);
 
@@ -1256,6 +1287,97 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
             </div>
           </div>
 
+          {/* Per-question times */}
+          <div className="card p-6">
+            <h2 className="text-xl font-black">⏱ Waktu per Soal</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Dihitung dari jawaban sebelumnya sampai kamu klik jawaban soal
+              ini. Soal yang paling lama = yang paling bikin mikir.
+            </p>
+            {(() => {
+              const all = sections.flatMap((sec) =>
+                sec.qs.map((q) => ({
+                  sec: sec.name,
+                  label: q.label,
+                  time: qTimes[q.id] ?? 0,
+                  answered: answers[q.id] !== undefined,
+                  correct: answers[q.id] === q.key,
+                })),
+              );
+              const slowest = all
+                .filter((t) => t.answered)
+                .sort((a, b) => b.time - a.time)
+                .slice(0, 5);
+              return (
+                <>
+                  {slowest.length > 0 ? (
+                    <div className="mt-4 space-y-1.5">
+                      <div className="text-sm font-black">Paling lama:</div>
+                      {slowest.map((t) => (
+                        <div
+                          key={`${t.sec}-${t.label}`}
+                          className="flex items-center justify-between gap-3 text-sm"
+                        >
+                          <span>
+                            {t.label} • {t.sec} {t.correct ? "✅" : "❌"}
+                          </span>
+                          <span className="font-black tabular-nums">
+                            {fmtElapsed(t.time)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="mt-4 space-y-3">
+                    {sections.map((sec) => {
+                      const timed = sec.qs.filter(
+                        (q) => answers[q.id] !== undefined,
+                      );
+                      const avg = timed.length
+                        ? Math.round(
+                            timed.reduce(
+                              (a, q) => a + (qTimes[q.id] ?? 0),
+                              0,
+                            ) / timed.length,
+                          )
+                        : 0;
+                      return (
+                        <div key={sec.key}>
+                          <div className="mb-1.5 flex items-baseline justify-between text-sm">
+                            <span className="jp font-black">{sec.name}</span>
+                            <span className="text-slate-500">
+                              rata-rata {fmtElapsed(avg)}/soal
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {sec.qs.map((q) => {
+                              const t = qTimes[q.id];
+                              const cls =
+                                answers[q.id] === undefined
+                                  ? "bg-slate-100 text-slate-400 dark:bg-slate-800"
+                                  : answers[q.id] === q.key
+                                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                                    : "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300";
+                              return (
+                                <span
+                                  key={q.id}
+                                  className={`rounded-lg px-2 py-1 text-xs font-bold tabular-nums ${cls}`}
+                                >
+                                  {q.label} ·{" "}
+                                  {t !== undefined ? fmtElapsed(t) : "—"}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
           {/* Review controls */}
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1309,6 +1431,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
                       key={q.id}
                       q={q}
                       userAns={answers[q.id]}
+                      timeSec={qTimes[q.id]}
                       showPassage={
                         !!q.passage && q.passage !== items[i - 1]?.passage
                       }
