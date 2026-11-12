@@ -58,6 +58,41 @@ function fmtElapsed(totalSeconds: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
+// ---------------------------------------------------------------------------
+// Auto-save draft (localStorage): an interrupted tryout resumes instead of
+// being wiped. The timer is wall-clock based (sectionStartedAt), so
+// reloading cannot buy extra time. Drafts older than 12h are stale.
+// ---------------------------------------------------------------------------
+interface TryoutDraft {
+  v: number;
+  answers: Record<string, number>;
+  flags: string[];
+  sectionIdx: number;
+  sectionStartedAt: number;
+  chunkIdx: number;
+  elapsed: number;
+  savedAt: number;
+}
+
+function draftKey(examId: string) {
+  return `jlpt_tryout_draft_${examId}`;
+}
+
+function readDraft(examId: string): TryoutDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(draftKey(examId));
+    if (!raw) return null;
+    const d = JSON.parse(raw) as TryoutDraft;
+    if (!d || d.v !== 1 || typeof d.sectionIdx !== "number" || !d.answers)
+      return null;
+    if (Date.now() - (d.savedAt || 0) > 12 * 3600 * 1000) return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+
 /** Render question text with the booklet's underlined target word (vocab M1/M2/M4). */
 function UnderlinedText({
   text,
@@ -374,6 +409,13 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
   const chunkIdxRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const rateRef = useRef(1);
+  // Auto-save draft: when this section's timer started (wall clock), and a
+  // draft waiting to be applied once the sections load.
+  const sectionStartedAtRef = useRef(0);
+  const restoreRef = useRef<TryoutDraft | null>(null);
+  const audioRestoreRef = useRef<{ chunkIdx: number; elapsed: number } | null>(
+    null,
+  );
   const preloadRef = useRef<HTMLAudioElement | null>(null);
   const lastElapsedRef = useRef(0);
   const savedRef = useRef(false);
@@ -397,6 +439,24 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
         const secs = buildSections(data, examIdx.timers);
         setSections(secs);
         setCurrentId(secs[0]?.qs[0]?.id ?? "");
+        // Resume an interrupted attempt from the auto-save draft.
+        const draft = readDraft(examIdx.id);
+        if (draft && draft.sectionIdx < secs.length) {
+          restoreRef.current = draft;
+          setAnswers(draft.answers || {});
+          setFlags(new Set(draft.flags || []));
+          if (draft.sectionIdx > 0) setSectionIdx(draft.sectionIdx);
+          const li = secs.findIndex((s) => s.key === "listening");
+          if (draft.sectionIdx === li && draft.elapsed > 0) {
+            audioRestoreRef.current = {
+              chunkIdx: draft.chunkIdx || 0,
+              elapsed: draft.elapsed,
+            };
+          }
+          setCurrentId(
+            secs[draft.sectionIdx]?.qs[0]?.id ?? secs[0]?.qs[0]?.id ?? "",
+          );
+        }
       })
       .catch((e: unknown) => {
         if (!alive) return;
@@ -509,22 +569,40 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     [examIdx, preloadChunk],
   );
 
-  // Entering the listening section: reset to chunk 0, paused.
+  // Entering the listening section: reset to chunk 0, paused — unless
+  // resuming a draft, in which case jump back to the saved audio position.
   useEffect(() => {
     if (phase !== "exam" || !examIdx) return;
     const sec = sections[sectionIdx];
     if (!sec || sec.key !== "listening") return;
-    chunkIdxRef.current = 0;
-    setChunkIdx(0);
-    lastElapsedRef.current = 0;
-    setElapsedDisplay(0);
+    const ar = audioRestoreRef.current;
+    audioRestoreRef.current = null;
+    const startChunk = ar ? ar.chunkIdx : 0;
+    const startOff = ar ? ar.elapsed - ar.chunkIdx * 25 : 0;
+    chunkIdxRef.current = startChunk;
+    setChunkIdx(startChunk);
+    lastElapsedRef.current = ar ? ar.elapsed : 0;
+    setElapsedDisplay(ar ? ar.elapsed : 0);
     setPlaying(false);
     const a = audioRef.current;
     if (a) {
-      a.src = audioChunkUrl(examIdx.id, 0);
+      a.src = audioChunkUrl(examIdx.id, startChunk);
+      a.playbackRate = rateRef.current;
+      if (startOff > 0) {
+        a.addEventListener(
+          "loadedmetadata",
+          () => {
+            a.currentTime = Math.min(
+              startOff,
+              Math.max(0, (a.duration || 25) - 0.05),
+            );
+          },
+          { once: true },
+        );
+      }
       a.load();
     }
-    preloadChunk(1);
+    preloadChunk(startChunk + 1);
   }, [phase, sectionIdx, sections, examIdx, preloadChunk]);
 
   // Pause audio on unmount.
@@ -637,12 +715,62 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     finishSection();
   }, [finishSection]);
 
+  // Wipe the auto-save draft and restart this tryout from question 1.
+  const resetAttempt = useCallback(() => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Hapus semua jawaban tryout ini dan mulai dari awal?",
+      )
+    )
+      return;
+    if (typeof window !== "undefined" && examIdx)
+      window.localStorage.removeItem(draftKey(examIdx.id));
+    pauseAudio();
+    setAnswers({});
+    setFlags(new Set());
+    setSectionIdx(0);
+    setCurrentId(sectionsRef.current[0]?.qs[0]?.id ?? "");
+    chunkIdxRef.current = 0;
+    setChunkIdx(0);
+    lastElapsedRef.current = 0;
+    setElapsedDisplay(0);
+    setPlaying(false);
+    const a = audioRef.current;
+    if (a) {
+      a.pause();
+      a.removeAttribute("src");
+      a.load();
+    }
+    const first = sectionsRef.current[0];
+    if (first) {
+      sectionStartedAtRef.current = Date.now();
+      setSecondsLeft(first.min * 60);
+    }
+    if (typeof window !== "undefined") window.scrollTo(0, 0);
+  }, [examIdx, pauseAudio]);
+
   // ---------------- Timers ----------------
   // Arm/reset the countdown whenever the section changes.
   useEffect(() => {
-    if (sections.length) {
-      setSecondsLeft(sections[sectionIdx].min * 60);
+    if (!sections.length) return;
+    const sec = sections[sectionIdx];
+    if (!sec) return;
+    const draft = restoreRef.current;
+    if (draft && draft.sectionIdx === sectionIdx) {
+      // Resume: wall-clock remaining from when this section started.
+      const remaining = Math.max(
+        0,
+        sec.min * 60 -
+          Math.floor((Date.now() - draft.sectionStartedAt) / 1000),
+      );
+      setSecondsLeft(remaining);
+      sectionStartedAtRef.current = draft.sectionStartedAt;
+      restoreRef.current = null;
+      return;
     }
+    sectionStartedAtRef.current = Date.now();
+    setSecondsLeft(sec.min * 60);
   }, [sectionIdx, sections]);
 
   useEffect(() => {
@@ -671,6 +799,44 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     );
     return () => window.clearInterval(t);
   }, [phase]);
+
+  // ---------------- Auto-save draft ----------------
+  // Answers, flags, section, timer start and audio position persist to
+  // localStorage, so a reload (or a closed tab) resumes the attempt
+  // instead of wiping it. The draft is cleared once the tryout is done.
+  useEffect(() => {
+    if (typeof window === "undefined" || !examIdx || !sections.length) return;
+    const key = draftKey(examIdx.id);
+    if (phase === "result" || phase === "retryResult") {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    if (phase !== "exam") return;
+    const draft: TryoutDraft = {
+      v: 1,
+      answers,
+      flags: [...flags],
+      sectionIdx,
+      sectionStartedAt: sectionStartedAtRef.current,
+      chunkIdx,
+      elapsed: elapsedDisplay,
+      savedAt: Date.now(),
+    };
+    try {
+      window.localStorage.setItem(key, JSON.stringify(draft));
+    } catch {
+      /* storage full/blocked — the tryout still works, just without resume */
+    }
+  }, [
+    phase,
+    sections,
+    answers,
+    flags,
+    sectionIdx,
+    chunkIdx,
+    elapsedDisplay,
+    examIdx,
+  ]);
 
   // ---------------- Keyboard answering (keys 1–4) ----------------
   useEffect(() => {
@@ -882,6 +1048,13 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
                   onClick={askFinish}
                 >
                   Selesai Sesi →
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost mt-1 text-xs"
+                  onClick={resetAttempt}
+                >
+                  ↺ Mulai ulang
                 </button>
               </div>
             </div>
