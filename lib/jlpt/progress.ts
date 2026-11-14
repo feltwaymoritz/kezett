@@ -3,6 +3,7 @@
 // Ported from the standalone app (merge/dedupe semantics preserved).
 
 import type { SectionResult } from "./scoring";
+import type { JlptSection } from "./api";
 
 export const JLPT_API = "https://jlpt-n3-api.vercel.app";
 
@@ -15,6 +16,75 @@ export interface JlptAttempt {
   total: number;
   pct: number;
   sections: SectionResult[];
+  /**
+   * Full per-question record. Present only for tryouts finished after the
+   * history-detail fix (2026-11-14); older attempts carry the summary only
+   * and the detail view says so instead of inventing answers.
+   */
+  detail?: JlptAttemptDetail;
+}
+
+/** One answered question inside a saved attempt (compact keys). */
+export interface JlptAttemptAnswer {
+  /** Question id, e.g. V12 / G38 / L5-7 */
+  id: string;
+  /** Section key */
+  s: "vocab" | "bunpo" | "listening";
+  /** Mondai number, e.g. 3 */
+  m: number;
+  /** User's answer (1-based); absent when unanswered */
+  a?: number;
+  /** Correct answer (1-based), when known */
+  k?: number;
+  /** Seconds spent on this question (per-question timer) */
+  t?: number;
+}
+
+/** Full per-question record of a finished tryout. */
+export interface JlptAttemptDetail {
+  /** Exam id, e.g. "2013-07" — needed to reload questions/keys for review */
+  examId: string;
+  /** Seconds per section (sum of per-question times) */
+  sectionSecs: Partial<Record<"vocab" | "bunpo" | "listening", number>>;
+  /** All questions in exam order */
+  perQ: JlptAttemptAnswer[];
+}
+
+function parseMondai(mondai: string): number {
+  const n = parseInt((mondai || "").replace(/[^0-9]/g, ""), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Build the full per-question record at finish time, from the runner's
+ * sections + answers + per-question times. ~5 KB per attempt, so the
+ * 300-attempt history cap stays well inside localStorage limits.
+ */
+export function buildAttemptDetail(
+  examId: string,
+  sections: JlptSection[],
+  answers: Record<string, number>,
+  qTimes: Record<string, number>
+): JlptAttemptDetail {
+  const sectionSecs: JlptAttemptDetail["sectionSecs"] = {};
+  const perQ: JlptAttemptAnswer[] = [];
+  for (const sec of sections) {
+    let secs = 0;
+    for (const q of sec.qs) {
+      const t = qTimes[q.id];
+      if (typeof t === "number" && t > 0) secs += t;
+      perQ.push({
+        id: q.id,
+        s: sec.key,
+        m: parseMondai(q.mondai),
+        ...(answers[q.id] !== undefined ? { a: answers[q.id] } : {}),
+        ...(q.key !== undefined ? { k: q.key } : {}),
+        ...(typeof t === "number" ? { t } : {}),
+      });
+    }
+    sectionSecs[sec.key] = secs;
+  }
+  return { examId, sectionSecs, perQ };
 }
 
 const HIST_KEY = "jlpt_hist";
@@ -52,6 +122,7 @@ export function recordJlptAttempt(entry: {
   total: number;
   pct: number;
   sections: SectionResult[];
+  detail?: JlptAttemptDetail;
 }): JlptAttempt {
   const nowS = Date.now();
   const item: JlptAttempt = {

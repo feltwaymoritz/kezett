@@ -12,6 +12,7 @@ import {
   type JlptAttempt,
 } from "@/lib/jlpt/progress";
 import { currentUser } from "@/lib/jlpt/auth";
+import { AttemptDetail } from "./AttemptDetail";
 
 const LOGGED_OUT_TEXT =
   "💾 Progress tersimpan lokal di browser ini. Masuk untuk sinkronisasi cloud antar perangkat.";
@@ -48,6 +49,8 @@ export function JlptHistory({ locale }: { locale: Locale }) {
 
   const [hist, setHist] = useState<JlptAttempt[]>([]);
   const [statusText, setStatusText] = useState<string>(LOGGED_OUT_TEXT);
+  // Attempt whose full review is open in the detail modal (null = closed).
+  const [selected, setSelected] = useState<JlptAttempt | null>(null);
 
   const refreshHist = useCallback(() => {
     setHist(getHist());
@@ -147,13 +150,16 @@ export function JlptHistory({ locale }: { locale: Locale }) {
                   <th className="px-4 py-3 font-semibold">Skor</th>
                   <th className="px-4 py-3 font-semibold">%</th>
                   <th className="px-4 py-3 font-semibold">Skor Skala</th>
+                  <th className="px-4 py-3 font-semibold">Detail</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((attempt) => (
                   <tr
                     key={attempt.id}
-                    className="border-b border-slate-100 last:border-0 dark:border-slate-800/60"
+                    onClick={() => setSelected(attempt)}
+                    className="cursor-pointer border-b border-slate-100 transition last:border-0 hover:bg-slate-50 dark:border-slate-800/60 dark:hover:bg-slate-800/40"
+                    title="Klik untuk melihat pembahasan lengkap"
                   >
                     <td className="whitespace-nowrap px-4 py-3 text-slate-500">
                       {attempt.date}
@@ -172,11 +178,25 @@ export function JlptHistory({ locale }: { locale: Locale }) {
                             .join(" • ")
                         : "—"}
                     </td>
+                    <td className="whitespace-nowrap px-4 py-3 font-bold text-emerald-700 dark:text-emerald-300">
+                      {attempt.detail ? "Lihat →" : "Ringkasan"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="text-xs text-slate-400">
+            Klik baris untuk membuka pembahasan lengkap sesi itu (jawaban
+            tiap soal, kunci, waktu per soal). Sesi lama yang hanya menyimpan
+            ringkasan menampilkan ringkasannya saja.
+          </p>
+          {selected ? (
+            <AttemptDetail
+              attempt={selected}
+              onClose={() => setSelected(null)}
+            />
+          ) : null}
         </>
       )}
     </div>
