@@ -202,7 +202,7 @@ function Palette({
 }) {
   const answeredCount = qs.filter((q) => answers[q.id] !== undefined).length;
   return (
-    <div className="card p-4 lg:sticky lg:top-24">
+    <div className="card p-4 lg:sticky lg:top-32">
       <div className="font-black">🗂 Navigasi</div>
       <div className="mb-3 mt-1 text-xs text-slate-500">
         Terjawab {answeredCount}/{qs.length}
@@ -945,6 +945,43 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
 
       {phase === "exam" && (
         <>
+          {/* Sticky timer bar — the countdown stays visible while scrolling
+              (user request 2026-11-21). Site header is h-16 sticky, so this
+              sits at top-16; fixed h-14 so the listening player + palette
+              can offset below it (top-32). */}
+          <div className="card relative sticky top-16 z-20 flex h-14 items-center justify-between gap-3 overflow-hidden px-4">
+            <div className="flex items-baseline gap-2">
+              <span className="hidden text-xs font-bold text-slate-500 sm:inline">
+                ⏱ Sisa waktu
+              </span>
+              <span className="sm:hidden">⏱</span>
+              <span
+                className={`text-xl font-black tabular-nums ${
+                  timerDanger ? "text-red-600" : ""
+                }`}
+              >
+                {fmtClock(secondsLeft ?? section.min * 60)}
+              </span>
+            </div>
+            <div className="hidden text-xs font-bold text-slate-500 sm:block">
+              Terjawab {answeredInSection}/{section.qs.length}
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={askFinish}
+            >
+              <span className="sm:hidden">Selesai →</span>
+              <span className="hidden sm:inline">Selesai Sesi →</span>
+            </button>
+            <div className="absolute inset-x-0 bottom-0 h-1 bg-slate-200/60 dark:bg-slate-800">
+              <div
+                className="h-full bg-emerald-600"
+                style={{ width: `${sectionProgress}%` }}
+              />
+            </div>
+          </div>
+
           {/* Section header */}
           <div className="card p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -999,7 +1036,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
           <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
             <div className="min-w-0 space-y-4">
               {section.key === "listening" && (
-                <div className="card sticky top-20 z-10 p-5">
+                <div className="card sticky top-32 z-10 p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="jp font-black">🎧 聴解 — Audio Ujian</div>
@@ -1098,6 +1135,24 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
                   onToggleFlag={toggleFlag}
                 />
               ))}
+
+              {/* Bottom next-session button — no more scrolling back up
+                  to move on (user request 2026-11-21). */}
+              <div className="card flex flex-wrap items-center justify-between gap-3 p-5">
+                <div className="text-sm text-slate-500">
+                  Terjawab {answeredInSection}/{section.qs.length} soal di
+                  sesi ini
+                </div>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={askFinish}
+                >
+                  {sectionIdx < sections.length - 1
+                    ? `Lanjut ke ${sections[sectionIdx + 1].name} →`
+                    : "Selesai Tryout →"}
+                </button>
+              </div>
             </div>
 
             <aside>
