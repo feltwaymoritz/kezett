@@ -66,6 +66,8 @@ export interface JlptExamData {
 /** One normalized question as used by the runner / review UI. */
 export interface JlptItem {
   id: string;
+  /** Booklet question number (19–39 in grammar+reading, 1–35 in vocab). */
+  no: number;
   label: string;
   mondai: string;
   text: string;
@@ -144,6 +146,7 @@ export function buildSections(
     const e = ansEntry(data.answers.vocab, `V${x.no}`);
     return {
       id: `V${x.no}`,
+      no: x.no,
       label: `No.${x.no}`,
       mondai: `問題${x.mondai}`,
       text: x.text,
@@ -162,6 +165,7 @@ export function buildSections(
     const e = ansEntry(data.answers.grammar_reading, `G${x.no}`);
     return {
       id: `G${x.no}`,
+      no: x.no,
       label: `No.${x.no}`,
       mondai: `問題${x.mondai}`,
       text: x.text,
@@ -181,6 +185,7 @@ export function buildSections(
       const printed = q.optionsPrinted !== false;
       listening.push({
         id: `L${m.mondai}-${q.no}`,
+        no: q.no,
         label: `問題${m.mondai}-${q.no}番`,
         mondai: `問題${m.mondai}`,
         // Audio-only questions (optionsPrinted:false) carry no options in the data;

@@ -40,16 +40,81 @@ export function UnderlinedText({
   );
 }
 
-export function PassageBlock({ text }: { text: string }) {
+export function PassageBlock({
+  text,
+  highlightNo,
+}: {
+  text: string;
+  /** Booklet number of the blank this question asks for (M3 essays). */
+  highlightNo?: number;
+}) {
   return (
     <div
       className="soft-card jp whitespace-pre-wrap p-5 leading-loose"
       // Inline style: .soft-card's unlayered border must not override the accent.
       style={{ borderLeft: "4px solid #fbbf24" }}
     >
-      {text}
+      <BlankText text={text} highlightNo={highlightNo} />
     </div>
   );
+}
+
+/**
+ * Booklet blank markers in the data come in three spellings — （ 19 ),
+ * 【19】, ( 19 ) — all meaning "blank number N". Render each as a numbered
+ * badge so the blank is unmistakable; the blank the current question asks
+ * for (highlightNo) gets the accent treatment, the rest stay neutral.
+ */
+const BLANK_RE = /（\s*\d+\s*）|【\d+(?:-[AB])?】|\(\s*\d+\s*\)/;
+const BLANK_SPLIT_RE = /(（\s*\d+\s*）|【\d+(?:-[AB])?】|\(\s*\d+\s*\))/;
+
+export function BlankText({
+  text,
+  highlightNo,
+}: {
+  text: string;
+  highlightNo?: number;
+}) {
+  const parts = text.split(BLANK_SPLIT_RE);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const m = part.match(BLANK_RE);
+        if (!m) return part;
+        const num = Number(part.match(/\d+/)![0]);
+        const hot = highlightNo !== undefined && num === highlightNo;
+        return (
+          <span
+            key={i}
+            className={`mx-0.5 inline-flex items-center rounded-md px-1.5 py-0.5 align-baseline text-xs font-black ${
+              hot
+                ? "bg-emerald-600 text-white"
+                : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-200"
+            }`}
+          >
+            {num}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+/** Question sentence: numbered blank markers render as badges, otherwise
+ *  fall back to the booklet underline (vocab M1/M2/M4). */
+export function QuestionText({
+  text,
+  underline,
+  highlightNo,
+}: {
+  text: string;
+  underline?: string;
+  highlightNo?: number;
+}) {
+  if (BLANK_RE.test(text)) {
+    return <BlankText text={text} highlightNo={highlightNo} />;
+  }
+  return <UnderlinedText text={text} underline={underline} />;
 }
 
 export function ReviewItem({
@@ -78,7 +143,9 @@ export function ReviewItem({
           </span>
         ) : null}
       </div>
-      {showPassage && q.passage ? <PassageBlock text={q.passage} /> : null}
+      {showPassage && q.passage ? (
+        <PassageBlock text={q.passage} highlightNo={q.no} />
+      ) : null}
       {q.image ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -89,7 +156,11 @@ export function ReviewItem({
       ) : null}
       {q.text ? (
         <p className="jp whitespace-pre-wrap leading-loose">
-          <UnderlinedText text={q.text} underline={q.underline} />
+          <QuestionText
+            text={q.text}
+            underline={q.underline}
+            highlightNo={q.no}
+          />
         </p>
       ) : null}
       <div className="grid gap-2">

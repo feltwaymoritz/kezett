@@ -31,8 +31,8 @@ import {
   LABEL_CHIP,
   OPT_BASE,
   PassageBlock,
+  QuestionText,
   ReviewItem,
-  UnderlinedText,
 } from "./ReviewItem";
 
 // ---------------------------------------------------------------------------
@@ -121,7 +121,9 @@ function ItemCard({
           {q.inst}
         </div>
       ) : null}
-      {showPassage && q.passage ? <PassageBlock text={q.passage} /> : null}
+      {showPassage && q.passage ? (
+        <PassageBlock text={q.passage} highlightNo={q.no} />
+      ) : null}
       <article className="card scroll-mt-28 p-5" data-qcard={q.id}>
         <div className="mb-3 flex items-center gap-2">
           <span className={LABEL_CHIP}>{q.label}</span>
@@ -150,7 +152,11 @@ function ItemCard({
         ) : null}
         {q.text ? (
           <p className="jp whitespace-pre-wrap leading-loose">
-            <UnderlinedText text={q.text} underline={q.underline} />
+            <QuestionText
+              text={q.text}
+              underline={q.underline}
+              highlightNo={q.no}
+            />
           </p>
         ) : null}
         <div className="mt-4 grid gap-2">
