@@ -45,7 +45,8 @@ export function PassageBlock({
   highlightNo,
 }: {
   text: string;
-  /** Booklet number of the blank this question asks for (M3 essays). */
+  /** Booklet number of the marker this question asks for: M3 blank number,
+   * or the circled reference number (reading essays, per-essay numbering). */
   highlightNo?: number;
 }) {
   return (
@@ -61,12 +62,30 @@ export function PassageBlock({
 
 /**
  * Booklet blank markers in the data come in three spellings — （ 19 ),
- * 【19】, ( 19 ) — all meaning "blank number N". Render each as a numbered
- * badge so the blank is unmistakable; the blank the current question asks
- * for (highlightNo) gets the accent treatment, the rest stay neutral.
+ * 【19】, ( 19 ) — all meaning "blank number N". Reading essays also use
+ * circled reference numbers ①②③ (per-essay numbering, the booklet's
+ * underline markers). Render each as a numbered badge so the marker is
+ * unmistakable; the marker the current question asks for (highlightNo) gets
+ * the accent treatment, the rest stay neutral.
  */
-const BLANK_RE = /（\s*\d+\s*）|【\d+(?:-[AB])?】|\(\s*\d+\s*\)/;
-const BLANK_SPLIT_RE = /(（\s*\d+\s*）|【\d+(?:-[AB])?】|\(\s*\d+\s*\))/;
+const CIRCLED = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
+const BLANK_RE =
+  /（\s*\d+\s*）|【\d+(?:-[AB])?】|\(\s*\d+\s*\)|[①-⑳]/;
+const BLANK_SPLIT_RE =
+  /(（\s*\d+\s*）|【\d+(?:-[AB])?】|\(\s*\d+\s*\)|[①-⑳])/;
+
+/**
+ * Number of the marker this question asks for: the first circled number in
+ * the question text (reading essays, per-essay numbering), else the question
+ * number (M3 blanks, where the blank number IS the question no).
+ */
+export function markerNoFor(text: string | undefined, fallback: number): number {
+  if (text) {
+    const m = text.match(/[①-⑳]/);
+    if (m) return CIRCLED.indexOf(m[0]) + 1;
+  }
+  return fallback;
+}
 
 export function BlankText({
   text,
@@ -81,7 +100,10 @@ export function BlankText({
       {parts.map((part, i) => {
         const m = part.match(BLANK_RE);
         if (!m) return part;
-        const num = Number(part.match(/\d+/)![0]);
+        const digitMatch = part.match(/\d+/);
+        const num = digitMatch
+          ? Number(digitMatch[0])
+          : CIRCLED.indexOf(part) + 1;
         const hot = highlightNo !== undefined && num === highlightNo;
         return (
           <span
@@ -144,7 +166,7 @@ export function ReviewItem({
         ) : null}
       </div>
       {showPassage && q.passage ? (
-        <PassageBlock text={q.passage} highlightNo={q.no} />
+        <PassageBlock text={q.passage} highlightNo={markerNoFor(q.text, q.no)} />
       ) : null}
       {q.image ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -159,7 +181,7 @@ export function ReviewItem({
           <QuestionText
             text={q.text}
             underline={q.underline}
-            highlightNo={q.no}
+            highlightNo={markerNoFor(q.text, q.no)}
           />
         </p>
       ) : null}

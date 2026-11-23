@@ -29,6 +29,7 @@ import { recordAttempt } from "@/lib/progress";
 import {
   fmtElapsed,
   LABEL_CHIP,
+  markerNoFor,
   OPT_BASE,
   PassageBlock,
   QuestionText,
@@ -122,7 +123,7 @@ function ItemCard({
         </div>
       ) : null}
       {showPassage && q.passage ? (
-        <PassageBlock text={q.passage} highlightNo={q.no} />
+        <PassageBlock text={q.passage} highlightNo={markerNoFor(q.text, q.no)} />
       ) : null}
       <article className="card scroll-mt-28 p-5" data-qcard={q.id}>
         <div className="mb-3 flex items-center gap-2">
@@ -155,7 +156,7 @@ function ItemCard({
             <QuestionText
               text={q.text}
               underline={q.underline}
-              highlightNo={q.no}
+              highlightNo={markerNoFor(q.text, q.no)}
             />
           </p>
         ) : null}
