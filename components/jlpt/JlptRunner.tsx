@@ -325,7 +325,14 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
   // Timestamp (ms) of the last answer click, or of the current section's
   // start — the clock for the per-question timer.
   const lastAnswerAtRef = useRef(0);
-  const preloadRef = useRef<HTMLAudioElement | null>(null);
+  // Listening chunks fetched ahead into Blob URLs. The old approach preloaded
+  // the next chunk in a background <audio preload="auto">, but mobile Chrome
+  // throttles background media elements, so chunk switches stalled at most
+  // 25s boundaries (chunk TTFB ~0.8-1.8s, Cache-Control: max-age=0). A blob
+  // is fully local once fetched (~75KB/chunk, ~5MB for a whole exam), so
+  // playback never waits on the network at a boundary.
+  const blobCacheRef = useRef<Map<number, string>>(new Map());
+  const blobFetchingRef = useRef<Set<number>>(new Set());
   const lastElapsedRef = useRef(0);
   const savedRef = useRef(false);
   const retrySavedRef = useRef(false);
@@ -440,16 +447,50 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     if (a) a.playbackRate = r;
   }, []);
 
-  const preloadChunk = useCallback(
+  // Fetch chunk n into the blob cache (no-op if cached or already fetching).
+  // Chunks are immutable, so force-cache lets repeat visits reuse the
+  // browser HTTP cache without revalidating against the host.
+  const ensureChunk = useCallback(
     (n: number) => {
       if (!examIdx || n < 0 || n >= examIdx.audioChunks) return;
       if (typeof window === "undefined") return;
-      if (!preloadRef.current) preloadRef.current = new Audio();
-      preloadRef.current.preload = "auto";
-      const url = audioChunkUrl(examIdx.id, n);
-      if (preloadRef.current.src !== url) preloadRef.current.src = url;
+      if (blobCacheRef.current.has(n) || blobFetchingRef.current.has(n))
+        return;
+      blobFetchingRef.current.add(n);
+      fetch(audioChunkUrl(examIdx.id, n), { cache: "force-cache" })
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.blob();
+        })
+        .then((b) => {
+          blobCacheRef.current.set(n, URL.createObjectURL(b));
+        })
+        .catch(() => {
+          /* chunk stays uncached — playback falls back to the direct URL */
+        })
+        .finally(() => {
+          blobFetchingRef.current.delete(n);
+        });
     },
     [examIdx],
+  );
+
+  // Blob URL for chunk n if already fetched, else the direct chunk URL.
+  const chunkSrc = useCallback(
+    (n: number) => {
+      if (!examIdx) return "";
+      return blobCacheRef.current.get(n) ?? audioChunkUrl(examIdx.id, n);
+    },
+    [examIdx],
+  );
+
+  // Fetch the next two chunks ahead of the current one.
+  const prefetchAhead = useCallback(
+    (n: number) => {
+      ensureChunk(n + 1);
+      ensureChunk(n + 2);
+    },
+    [ensureChunk],
   );
 
   // Jump to an absolute second in the full audio (chunks are 25s slices).
@@ -462,12 +503,12 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
       const off = t - n * 25;
       const a = audioRef.current;
       const wasPlaying = !!a && !a.paused;
+      const prevChunk = chunkIdxRef.current;
       chunkIdxRef.current = n;
       setChunkIdx(n);
       lastElapsedRef.current = t;
       setElapsedDisplay(t);
       if (a) {
-        const url = audioChunkUrl(examIdx.id, n);
         const apply = () => {
           a.currentTime = Math.min(
             off,
@@ -476,17 +517,19 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
           a.playbackRate = rateRef.current;
           if (wasPlaying) void a.play().catch(() => {});
         };
-        if (a.src === url || a.src.endsWith(url)) {
+        // Same chunk already loaded (blob or direct) — just move the playhead.
+        if (a.src && prevChunk === n) {
           apply();
         } else {
-          a.src = url;
+          a.src = chunkSrc(n);
           a.addEventListener("loadedmetadata", apply, { once: true });
           a.load();
         }
       }
-      preloadChunk(n + 1);
+      ensureChunk(n);
+      prefetchAhead(n);
     },
-    [examIdx, preloadChunk],
+    [examIdx, chunkSrc, ensureChunk, prefetchAhead],
   );
 
   // Entering the listening section: reset to chunk 0, paused — unless
@@ -506,7 +549,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     setPlaying(false);
     const a = audioRef.current;
     if (a) {
-      a.src = audioChunkUrl(examIdx.id, startChunk);
+      a.src = chunkSrc(startChunk);
       a.playbackRate = rateRef.current;
       if (startOff > 0) {
         a.addEventListener(
@@ -522,17 +565,25 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
       }
       a.load();
     }
-    preloadChunk(startChunk + 1);
-  }, [phase, sectionIdx, sections, examIdx, preloadChunk]);
+    ensureChunk(startChunk);
+    prefetchAhead(startChunk);
+  }, [
+    phase,
+    sectionIdx,
+    sections,
+    examIdx,
+    chunkSrc,
+    ensureChunk,
+    prefetchAhead,
+  ]);
 
-  // Pause audio on unmount.
+  // Pause audio and release blob URLs on unmount.
   useEffect(() => {
     return () => {
       if (audioRef.current) audioRef.current.pause();
-      if (preloadRef.current) {
-        preloadRef.current.src = "";
-        preloadRef.current = null;
-      }
+      blobCacheRef.current.forEach((u) => URL.revokeObjectURL(u));
+      blobCacheRef.current.clear();
+      blobFetchingRef.current.clear();
     };
   }, []);
 
@@ -540,7 +591,7 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
     const a = audioRef.current;
     if (!a || !examIdx) return;
     if (a.paused) {
-      if (!a.src) a.src = audioChunkUrl(examIdx.id, chunkIdxRef.current);
+      if (!a.src) a.src = chunkSrc(chunkIdxRef.current);
       a.playbackRate = rateRef.current;
       void a.play().catch(() => {
         /* autoplay / network hiccup — user can press play again */
@@ -564,15 +615,15 @@ export function JlptRunner({ locale, id }: { locale: Locale; id: string }) {
       setElapsedDisplay(next * 25);
       const a = audioRef.current;
       if (a) {
-        a.src = audioChunkUrl(examIdx.id, next);
+        a.src = chunkSrc(next);
         a.playbackRate = rateRef.current;
         void a.play().catch(() => {});
       }
-      preloadChunk(next + 1);
+      prefetchAhead(next);
     } else {
       setPlaying(false);
     }
-  }, [examIdx, preloadChunk]);
+  }, [examIdx, chunkSrc, prefetchAhead]);
 
   const handleTimeUpdate = useCallback(() => {
     const a = audioRef.current;
